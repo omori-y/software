@@ -9,8 +9,11 @@ public class OthelloClient extends JFrame {
     private static final int CELL_SIZE = 60;
     private static final Color BOARD_COLOR = new Color(0, 128, 0);
     private static final Color LINE_COLOR = Color.BLACK;
-
+    private static final int[] DX = {-1, -1, -1, 0, 0, 1, 1, 1};
+    private static final int[] DY = {-1, 0, 1, -1, 1, -1, 0, 1};
+    
     private int[][] board = new int[BOARD_SIZE][BOARD_SIZE]; // 0=空,1=黒,2=白
+    private int currentPlayer = 2;
     private boolean myTurn = false; // クライアントは後手（白）
     private JPanel gamePanel;
     private JLabel statusLabel;
@@ -26,6 +29,8 @@ public class OthelloClient extends JFrame {
         initializeBoard();
         setupUI();
         connectToServer();
+        
+        
 
         pack();
         setLocationRelativeTo(null);
@@ -54,10 +59,24 @@ public class OthelloClient extends JFrame {
                 if (row < 0 || row >= BOARD_SIZE || col < 0 || col >= BOARD_SIZE) return;
                 if (board[row][col] != 0) return;
 
-                board[row][col] = 2; // クライアントは白(2)
-                repaint();
+                //置けるかどうか判定
+                if (!canPlace(board, row, col, currentPlayer)) return;
+                //裏返す
+                flip(board, row, col, currentPlayer);
+                // 相手が置けなかったら自分のターン
+                if (!hasAnyValidMove(board, 1)) {
+                    myTurn = true;
+                    repaint();
+                    sendMove(row, col);
+                    updateStatus();
+                    checkGameEnd();
+                    return;
+                }
 
+                repaint();
                 sendMove(row, col);
+                // 勝敗チェック
+                checkGameEnd();
                 myTurn = false;
                 updateStatus();
             }
@@ -112,9 +131,123 @@ public class OthelloClient extends JFrame {
 
     private void receiveMove(int row, int col) {
         board[row][col] = 1; // サーバーは黒(1)
+        flip(board, row, col, 1);
+        checkGameEnd();
+        // 自分が置けなかったら相手にパス
+        if (!hasAnyValidMove(board, 2)) {
+            myTurn = false;
+            updateStatus();
+            return;
+        }
         myTurn = true;
         updateStatus();
         repaint();
+    }
+
+    private boolean canPlace(int[][] board, int row, int col, int player) {
+        if (board[row][col] != 0) return false;
+
+        int opponent = (player == 1) ? 2 : 1;
+
+        for (int d = 0; d < 8; d++) {
+            int r = row + DX[d];
+            int c = col + DY[d];
+            boolean hasOpponentBetween = false;
+
+            while (r >= 0 && r < BOARD_SIZE && c >= 0 && c < BOARD_SIZE) {
+                if (board[r][c] == opponent) {
+                    hasOpponentBetween = true;
+                } else if (board[r][c] == player) {
+                    if (hasOpponentBetween) {
+                        return true;
+                    } else {
+                        break;
+                    }
+                } else {
+                    break;
+                }
+                r += DX[d];
+                c += DY[d];
+            }
+        }
+        return false;
+    }
+
+    private void flip(int[][] board, int row, int col, int player) {
+        int opponent = (player == 1) ? 2 : 1;
+        board[row][col] = player;
+
+        for (int d = 0; d < 8; d++) {
+            int r = row + DX[d];
+            int c = col + DY[d];
+            boolean hasOpponentBetween = false;
+
+            while (r >= 0 && r < BOARD_SIZE && c >= 0 && c < BOARD_SIZE) {
+                if (board[r][c] == opponent) {
+                    hasOpponentBetween = true;
+                } else if (board[r][c] == player) {
+                    if (hasOpponentBetween) {
+                        int flipR = row + DX[d];
+                        int flipC = col + DY[d];
+                        while (flipR != r || flipC != c) {
+                            board[flipR][flipC] = player;
+                            flipR += DX[d];
+                            flipC += DY[d];
+                        }
+                    }
+                    break;
+                } else {
+                    break;
+                }
+                r += DX[d];
+                c += DY[d];
+            }
+        }
+    }
+
+    private boolean hasAnyValidMove(int[][] board, int player) {
+        for (int r = 0; r < BOARD_SIZE; r++) {
+            for (int c = 0; c < BOARD_SIZE; c++) {
+                if (canPlace(board, r, c, player)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private int countStones(int[][] board, int player) {
+        int count = 0;
+        for (int r = 0; r < BOARD_SIZE; r++) {
+            for (int c = 0; c < BOARD_SIZE; c++) {
+                if (board[r][c] == player) {
+                    count++;
+                }
+            }
+        }
+        return count;
+    }
+
+    private void checkGameEnd() {
+        boolean blackCanMove = hasAnyValidMove(board, 1);
+        boolean whiteCanMove = hasAnyValidMove(board, 2);
+
+        if (!blackCanMove && !whiteCanMove) {
+            int blackCount = countStones(board, 1);
+            int whiteCount = countStones(board, 2);
+
+            String result;
+            if (blackCount > whiteCount) {
+                result = "黒の勝ち！ 黒: " + blackCount + " 白: " + whiteCount;
+            } else if (whiteCount > blackCount) {
+                result = "白の勝ち！ 黒: " + blackCount + " 白: " + whiteCount;
+            } else {
+                result = "引き分け！ 黒: " + blackCount + " 白: " + whiteCount;
+            }
+
+            JOptionPane.showMessageDialog(this, result, "ゲーム終了", JOptionPane.INFORMATION_MESSAGE);
+            System.exit(0);
+        }
     }
 
     private class GamePanel extends JPanel {
@@ -160,3 +293,5 @@ public class OthelloClient extends JFrame {
         SwingUtilities.invokeLater(() -> new OthelloClient());
     }
 }
+
+
