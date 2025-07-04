@@ -1,308 +1,129 @@
-package org.example;
-
 import javax.swing.*;
-import java.awt.*;
-import java.awt.event.*;
 import java.io.*;
 import java.net.*;
 
 public class OthelloServer extends JFrame {
-    private static final int BOARD_SIZE = 8;
-    private static final int CELL_SIZE = 60;
-    private static final Color BOARD_COLOR = new Color(0, 128, 0);
-    private static final Color LINE_COLOR = Color.BLACK;
-    private static final int[] DX = {-1, -1, -1, 0, 0, 1, 1, 1}; 
-    private static final int[] DY = {-1, 0, 1, -1, 1, -1, 0, 1};
-
-    private int[][] board = new int[BOARD_SIZE][BOARD_SIZE]; // 0=空,1=黒,2=白
-    private int currentPlayer = 1; // 黒からスタート（サーバー側）
-    private boolean myTurn = true; // サーバーは先手
-
-    private JPanel gamePanel;
-    private JLabel statusLabel;
     private ServerSocket serverSocket;
     private Socket socket;
     private BufferedReader in;
     private PrintWriter out;
 
+    private OthelloBoard board;
+    private OthelloPanel panel;
+    private boolean myTurn = true; // サーバー（黒）先手
+
     public OthelloServer() {
-        setTitle("Othello Server (Black)");
-        setDefaultCloseOperation(EXIT_ON_CLOSE);
+        this(6000);
+    }
+
+    public OthelloServer(int port) {
+        super("Othello Server (Black)");  // JFrameタイトル設定
+        setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setResizable(false);
 
-        initializeBoard();
-        setupUI();
-        setupNetwork();
-        
-        
+        board = new OthelloBoard();
+        panel = new OthelloPanel(board.board);
 
-        pack();
-        setLocationRelativeTo(null);
+        // パネルをフレームにセット
+        add(panel);
+
+        pack();  // サイズ調整
+        setLocationRelativeTo(null); // 中央表示
         setVisible(true);
-    }
 
-    private void initializeBoard() {
-        for(int r=0; r<BOARD_SIZE; r++)
-            for(int c=0; c<BOARD_SIZE; c++)
-                board[r][c] = 0;
-        // 初期配置
-        board[3][3] = 2; board[3][4] = 1;
-        board[4][3] = 1; board[4][4] = 2;
-    }
+        panel.addClickListener((row, col) -> {
+            if (!myTurn) return;
+            if (!board.canPlace(row, col, 1)) return; // 黒は1
+            board.flip(row, col, 1);
+            panel.refresh();
 
-    private void setupUI() {
-        gamePanel = new GamePanel();
-        gamePanel.setPreferredSize(new Dimension(BOARD_SIZE * CELL_SIZE, BOARD_SIZE * CELL_SIZE));
-        gamePanel.addMouseListener(new MouseAdapter() {
-            public void mouseClicked(MouseEvent e) {
-                if (!myTurn) return; // 自分のターンでないなら無視
+            sendMove(row, col);
 
-                int col = e.getX() / CELL_SIZE;
-                int row = e.getY() / CELL_SIZE;
-
-                if (row < 0 || row >= BOARD_SIZE || col < 0 || col >= BOARD_SIZE) return;
-                if (board[row][col] != 0) return;
-                
-                //置けるかどうか判定
-                if (!canPlace(board, row, col, currentPlayer)) return;
-                //裏返す
-                flip(board, row, col, currentPlayer);
-                
-                // 相手が置けなかったら自分のターン
-                if (!hasAnyValidMove(board, 2)) {
-                    myTurn = true;
-                    repaint();
-                    sendMove(row, col);
-                    updateStatus();
-                    checkGameEnd();
-                    return;
-                }
-                
-                repaint();
-                sendMove(row, col);
-
-                // 勝敗チェック
-                checkGameEnd();
-
-                myTurn = false;
-                updateStatus();
-            }
-        });
-
-        statusLabel = new JLabel("あなたのターン (黒)", SwingConstants.CENTER);
-
-        add(gamePanel, BorderLayout.CENTER);
-        add(statusLabel, BorderLayout.SOUTH);
-    }
-
-    private void updateStatus() {
-        SwingUtilities.invokeLater(() -> {
-            if (myTurn) {
-                statusLabel.setText("あなたのターン (黒)");
+            if (!board.hasAnyValidMove(2)) {
+                myTurn = true;
+                updateStatus("相手は置けません。あなたのターン(黒)");
             } else {
-                statusLabel.setText("相手のターン (白)");
+                myTurn = false;
+                updateStatus("相手のターン(白)");
             }
         });
+
+        new Thread(() -> startServer(port)).start();
     }
 
-    private void setupNetwork() {
-        new Thread(() -> {
-            try {
-                serverSocket = new ServerSocket(6000);
-                System.out.println("クライアント接続待機中...");
-                socket = serverSocket.accept();
-                System.out.println("クライアント接続されました: " + socket.getInetAddress());
+    private void startServer(int port) {
+        try {
+            serverSocket = new ServerSocket(port);
+            System.out.println("サーバー起動。クライアントの接続待ち...");
 
-                in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
-                out = new PrintWriter(socket.getOutputStream(), true);
+            socket = serverSocket.accept();
+            System.out.println("クライアント接続: " + socket.getInetAddress());
 
-                // 相手からの手を受信
-                String line;
-                while ((line = in.readLine()) != null) {
-                    System.out.println("受信: " + line);
-                    if (line.startsWith("MOVE")) {
-                        String[] parts = line.split(" ");
-                        int r = Integer.parseInt(parts[1]);
-                        int c = Integer.parseInt(parts[2]);
-                        receiveMove(r, c);
+            in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+            out = new PrintWriter(socket.getOutputStream(), true);
+
+            listenForMoves();
+        } catch (IOException e) {
+            e.printStackTrace();
+        } finally {
+            closeConnections();
+        }
+    }
+
+    private void listenForMoves() {
+        String line;
+        try {
+            while ((line = in.readLine()) != null) {
+                System.out.println("受信: " + line);
+                if (line.startsWith("MOVE")) {
+                    String[] parts = line.split(" ");
+                    int row = Integer.parseInt(parts[1]);
+                    int col = Integer.parseInt(parts[2]);
+
+                    if (board.canPlace(row, col, 2)) { // クライアントは白2
+                        board.flip(row, col, 2);
+                        panel.refresh();
+
+                        if (!board.hasAnyValidMove(1)) {
+                            myTurn = false;
+                            updateStatus("あなたは置けません。相手のターン(白)");
+                        } else {
+                            myTurn = true;
+                            updateStatus("あなたのターン(黒)");
+                        }
                     }
                 }
-            } catch (IOException e) {
-                e.printStackTrace();
             }
-        }).start();
+        } catch (IOException e) {
+            System.out.println("通信エラー: " + e.getMessage());
+        }
     }
 
     private void sendMove(int row, int col) {
-        String move = "MOVE " + row + " " + col;
-        out.println(move);
-        System.out.println("送信: " + move);
-    }
-
-    private void receiveMove(int row, int col) {
-        board[row][col] = 2; // クライアント側は白なので2
-        flip(board, row, col, 2);
-        checkGameEnd();
-        // 自分が置けなかったら相手にパス
-        if (!hasAnyValidMove(board, 1)) {
-            myTurn = false;
-            updateStatus();
-            return;
-        }
-        myTurn = true;
-        updateStatus();
-        repaint();
-    }
-
-    private boolean canPlace(int[][] board, int row, int col, int player) {
-        if (board[row][col] != 0) return false;
-
-        int opponent = (player == 1) ? 2 : 1;
-
-        for (int d = 0; d < 8; d++) {
-            int r = row + DX[d];
-            int c = col + DY[d];
-            boolean hasOpponentBetween = false;
-
-            while (r >= 0 && r < BOARD_SIZE && c >= 0 && c < BOARD_SIZE) {
-                if (board[r][c] == opponent) {
-                    hasOpponentBetween = true;
-                } else if (board[r][c] == player) {
-                    if (hasOpponentBetween) {
-                        return true;
-                    } else {
-                        break;
-                    }
-                } else {
-                    break;
-                }
-                r += DX[d];
-                c += DY[d];
-            }
-        }
-        return false;
-    }
-
-    private void flip(int[][] board, int row, int col, int player) {
-        int opponent = (player == 1) ? 2 : 1;
-        board[row][col] = player;
-
-        for (int d = 0; d < 8; d++) {
-            int r = row + DX[d];
-            int c = col + DY[d];
-            boolean hasOpponentBetween = false;
-
-            while (r >= 0 && r < BOARD_SIZE && c >= 0 && c < BOARD_SIZE) {
-                if (board[r][c] == opponent) {
-                    hasOpponentBetween = true;
-                } else if (board[r][c] == player) {
-                    if (hasOpponentBetween) {
-                        int flipR = row + DX[d];
-                        int flipC = col + DY[d];
-                        while (flipR != r || flipC != c) {
-                            board[flipR][flipC] = player;
-                            flipR += DX[d];
-                            flipC += DY[d];
-                        }
-                    }
-                    break;
-                } else {
-                    break;
-                }
-                r += DX[d];
-                c += DY[d];
-            }
+        if (out != null) {
+            String message = "MOVE " + row + " " + col;
+            out.println(message);
+            System.out.println("送信: " + message);
         }
     }
 
-    private boolean hasAnyValidMove(int[][] board, int player) {
-        for (int r = 0; r < BOARD_SIZE; r++) {
-            for (int c = 0; c < BOARD_SIZE; c++) {
-                if (canPlace(board, r, c, player)) {
-                    return true;
-                }
-            }
-        }
-        return false;
+    private void updateStatus(String text) {
+        // 今はコンソール表示のみ。GUIにJLabelを追加すればここで更新可能。
+        System.out.println("STATUS: " + text);
     }
 
-    private int countStones(int[][] board, int player) {
-        int count = 0;
-        for (int r = 0; r < BOARD_SIZE; r++) {
-            for (int c = 0; c < BOARD_SIZE; c++) {
-                if (board[r][c] == player) {
-                    count++;
-                }
-            }
-        }
-        return count;
-    }
-
-    private void checkGameEnd() {
-        boolean blackCanMove = hasAnyValidMove(board, 1);
-        boolean whiteCanMove = hasAnyValidMove(board, 2);
-
-        if (!blackCanMove && !whiteCanMove) {
-            int blackCount = countStones(board, 1);
-            int whiteCount = countStones(board, 2);
-
-            String result;
-            if (blackCount > whiteCount) {
-                result = "黒の勝ち！ 黒: " + blackCount + " 白: " + whiteCount;
-            } else if (whiteCount > blackCount) {
-                result = "白の勝ち！ 黒: " + blackCount + " 白: " + whiteCount;
-            } else {
-                result = "引き分け！ 黒: " + blackCount + " 白: " + whiteCount;
-            }
-
-            JOptionPane.showMessageDialog(this, result, "ゲーム終了", JOptionPane.INFORMATION_MESSAGE);
-            System.exit(0);
-        }
-    }
-
-    private class GamePanel extends JPanel {
-        protected void paintComponent(Graphics g) {
-            super.paintComponent(g);
-            Graphics2D g2d = (Graphics2D)g;
-            g2d.setColor(BOARD_COLOR);
-            g2d.fillRect(0, 0, getWidth(), getHeight());
-
-            // 線を描画
-            g2d.setColor(LINE_COLOR);
-            for (int i = 0; i <= BOARD_SIZE; i++) {
-                g2d.drawLine(i * CELL_SIZE, 0, i * CELL_SIZE, BOARD_SIZE * CELL_SIZE);
-                g2d.drawLine(0, i * CELL_SIZE, BOARD_SIZE * CELL_SIZE, i * CELL_SIZE);
-            }
-
-            // 石を描画
-            for (int r = 0; r < BOARD_SIZE; r++) {
-                for (int c = 0; c < BOARD_SIZE; c++) {
-                    if (board[r][c] != 0) {
-                        drawPiece(g2d, r, c, board[r][c]);
-                    }
-                }
-            }
-        }
-
-        private void drawPiece(Graphics2D g2d, int row, int col, int player) {
-            int x = col * CELL_SIZE + 5;
-            int y = row * CELL_SIZE + 5;
-            int size = CELL_SIZE - 10;
-
-            if (player == 1) {
-                g2d.setColor(Color.BLACK);
-            } else {
-                g2d.setColor(Color.WHITE);
-            }
-            g2d.fillOval(x, y, size, size);
-            g2d.setColor(Color.BLACK);
-            g2d.setStroke(new BasicStroke(2));
-            g2d.drawOval(x, y, size, size);
+    private void closeConnections() {
+        try {
+            if (in != null) in.close();
+            if (out != null) out.close();
+            if (socket != null) socket.close();
+            if (serverSocket != null) serverSocket.close();
+        } catch (IOException e) {
+            e.printStackTrace();
         }
     }
 
     public static void main(String[] args) {
-        SwingUtilities.invokeLater(() -> new OthelloServer());
+        SwingUtilities.invokeLater(OthelloServer::new);
     }
 }
-
