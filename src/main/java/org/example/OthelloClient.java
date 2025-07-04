@@ -1,6 +1,6 @@
+import javax.swing.*;
 import java.io.*;
 import java.net.*;
-import javax.swing.*;
 
 public class OthelloClient {
     private Socket socket;
@@ -9,59 +9,70 @@ public class OthelloClient {
 
     private OthelloBoard board;
     private OthelloPanel panel;
-    private boolean myTurn = false; // クライアント（白）は後手
+    private int myPlayer = 0; // 1か2が割り当てられる
+    private boolean myTurn = false;
 
     public OthelloClient(String host, int port) {
-        board = new OthelloBoard();  // 盤面初期化
-        panel = new OthelloPanel(board.board); // GUI表示
+        board = new OthelloBoard();
+        panel = new OthelloPanel(board.board);
+
+        JFrame frame = new JFrame("Othello Client");
+        frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+        frame.add(panel);
+        frame.pack();
+        frame.setLocationRelativeTo(null);
+        frame.setVisible(true);
+
+        panel.addClickListener((r, c) -> {
+            if (!myTurn) return;
+            if (!board.canPlace(r, c, myPlayer)) return;
+
+            out.println("MOVE " + r + " " + c);
+            myTurn = false;
+            panel.setMyTurn(false);
+        });
 
         try {
             socket = new Socket(host, port);
-            System.out.println("サーバーに接続しました: " + socket.getInetAddress());
-
             in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
             out = new PrintWriter(socket.getOutputStream(), true);
 
-            listenForMoves(); // サーバーからの受信開始
+            new Thread(this::listenServer).start();
+
         } catch (IOException e) {
             e.printStackTrace();
         }
     }
 
-    private void listenForMoves() {
-        new Thread(() -> {
+    private void listenServer() {
+        try {
             String line;
-            try {
-                while ((line = in.readLine()) != null) {
-                    System.out.println("受信: " + line);
-                    if (line.startsWith("MOVE")) {
-                        String[] parts = line.split(" ");
-                        int row = Integer.parseInt(parts[1]);
-                        int col = Integer.parseInt(parts[2]);
-
-                        // サーバー（黒）の手を反映
-                        if (board.canPlace(row, col, 1)) {
-                            board.flip(row, col, 1);
-                            panel.refresh();
-                        }
-                        myTurn = true;
+            while ((line = in.readLine()) != null) {
+                if (line.startsWith("PLAYER")) {
+                    myPlayer = Integer.parseInt(line.split(" ")[1]);
+                    panel.setCurrentPlayer(myPlayer);
+                    System.out.println("あなたはプレイヤー " + myPlayer + " です");
+                } else if (line.startsWith("BOARD")) {
+                    String[] parts = line.substring(6).split(",");
+                    for (int i = 0; i < parts.length; i++) {
+                        board.board[i / 8][i % 8] = Integer.parseInt(parts[i]);
                     }
+                    panel.refresh();
+                } else if (line.equals("YOUR_TURN")) {
+                    myTurn = true;
+                    panel.setMyTurn(true);
+                    System.out.println("あなたのターンです");
+                } else if (line.equals("WAIT")) {
+                    myTurn = false;
+                    panel.setMyTurn(false);
+                    System.out.println("相手のターンです");
+                } else if (line.equals("GAME_OVER")) {
+                    JOptionPane.showMessageDialog(panel, "ゲーム終了！");
+                    System.exit(0);
                 }
-            } catch (IOException e) {
-                System.out.println("通信エラー: " + e.getMessage());
             }
-        }).start();
-    }
-
-    public void sendMove(int row, int col) {
-        if (!myTurn) return;
-
-        if (board.canPlace(row, col, 2)) {
-            board.flip(row, col, 2);
-            panel.refresh();
-            out.println("MOVE " + row + " " + col);
-            System.out.println("送信: MOVE " + row + " " + col);
-            myTurn = false;
+        } catch (IOException e) {
+            e.printStackTrace();
         }
     }
 
