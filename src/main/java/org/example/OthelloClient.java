@@ -1,299 +1,71 @@
-package org.example;
-
-import javax.swing.*;
-import java.awt.*;
-import java.awt.event.*;
 import java.io.*;
 import java.net.*;
+import javax.swing.*;
 
-public class OthelloClient extends JFrame {
-    private static final int BOARD_SIZE = 8;
-    private static final int CELL_SIZE = 60;
-    private static final Color BOARD_COLOR = new Color(0, 128, 0);
-    private static final Color LINE_COLOR = Color.BLACK;
-    private static final int[] DX = {-1, -1, -1, 0, 0, 1, 1, 1};
-    private static final int[] DY = {-1, 0, 1, -1, 1, -1, 0, 1};
-    
-    private int[][] board = new int[BOARD_SIZE][BOARD_SIZE]; // 0=空,1=黒,2=白
-    private int currentPlayer = 2;
-    private boolean myTurn = false; // クライアントは後手（白）
-    private JPanel gamePanel;
-    private JLabel statusLabel;
+public class OthelloClient {
     private Socket socket;
     private BufferedReader in;
     private PrintWriter out;
 
-    public OthelloClient() {
-        setTitle("Othello Client (White)");
-        setDefaultCloseOperation(EXIT_ON_CLOSE);
-        setResizable(false);
+    private OthelloBoard board;
+    private OthelloPanel panel;
+    private boolean myTurn = false; // クライアント（白）は後手
 
-        initializeBoard();
-        setupUI();
-        connectToServer();
-        
-        
+    public OthelloClient(String host, int port) {
+        board = new OthelloBoard();  // 盤面初期化
+        panel = new OthelloPanel(board.board); // GUI表示
 
-        pack();
-        setLocationRelativeTo(null);
-        setVisible(true);
+        try {
+            socket = new Socket(host, port);
+            System.out.println("サーバーに接続しました: " + socket.getInetAddress());
+
+            in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+            out = new PrintWriter(socket.getOutputStream(), true);
+
+            listenForMoves(); // サーバーからの受信開始
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
     }
 
-    private void initializeBoard() {
-        for (int r = 0; r < BOARD_SIZE; r++)
-            for (int c = 0; c < BOARD_SIZE; c++)
-                board[r][c] = 0;
-
-        board[3][3] = 2; board[3][4] = 1;
-        board[4][3] = 1; board[4][4] = 2;
-    }
-
-    private void setupUI() {
-        gamePanel = new GamePanel();
-        gamePanel.setPreferredSize(new Dimension(BOARD_SIZE * CELL_SIZE, BOARD_SIZE * CELL_SIZE));
-        gamePanel.addMouseListener(new MouseAdapter() {
-            public void mouseClicked(MouseEvent e) {
-                if (!myTurn) return;
-
-                int col = e.getX() / CELL_SIZE;
-                int row = e.getY() / CELL_SIZE;
-
-                if (row < 0 || row >= BOARD_SIZE || col < 0 || col >= BOARD_SIZE) return;
-                if (board[row][col] != 0) return;
-
-                //置けるかどうか判定
-                if (!canPlace(board, row, col, currentPlayer)) return;
-                //裏返す
-                flip(board, row, col, currentPlayer);
-                // 相手が置けなかったら自分のターン
-                if (!hasAnyValidMove(board, 1)) {
-                    myTurn = true;
-                    repaint();
-                    sendMove(row, col);
-                    updateStatus();
-                    checkGameEnd();
-                    return;
-                }
-
-                repaint();
-                sendMove(row, col);
-                // 勝敗チェック
-                checkGameEnd();
-                myTurn = false;
-                updateStatus();
-            }
-        });
-
-        statusLabel = new JLabel("相手のターン (黒)", SwingConstants.CENTER);
-        add(gamePanel, BorderLayout.CENTER);
-        add(statusLabel, BorderLayout.SOUTH);
-    }
-
-    private void updateStatus() {
-        SwingUtilities.invokeLater(() -> {
-            if (myTurn) {
-                statusLabel.setText("あなたのターン (白)");
-            } else {
-                statusLabel.setText("相手のターン (黒)");
-            }
-        });
-    }
-
-    private void connectToServer() {
+    private void listenForMoves() {
         new Thread(() -> {
+            String line;
             try {
-                socket = new Socket("localhost", 6000);
-                System.out.println("サーバーに接続しました");
-
-                in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
-                out = new PrintWriter(socket.getOutputStream(), true);
-
-                // サーバーからのメッセージ受信
-                String line;
                 while ((line = in.readLine()) != null) {
                     System.out.println("受信: " + line);
                     if (line.startsWith("MOVE")) {
                         String[] parts = line.split(" ");
-                        int r = Integer.parseInt(parts[1]);
-                        int c = Integer.parseInt(parts[2]);
-                        receiveMove(r, c);
+                        int row = Integer.parseInt(parts[1]);
+                        int col = Integer.parseInt(parts[2]);
+
+                        // サーバー（黒）の手を反映
+                        if (board.canPlace(row, col, 1)) {
+                            board.flip(row, col, 1);
+                            panel.refresh();
+                        }
+                        myTurn = true;
                     }
                 }
             } catch (IOException e) {
-                e.printStackTrace();
+                System.out.println("通信エラー: " + e.getMessage());
             }
         }).start();
     }
 
-    private void sendMove(int row, int col) {
-        String move = "MOVE " + row + " " + col;
-        out.println(move);
-        System.out.println("送信: " + move);
-    }
+    public void sendMove(int row, int col) {
+        if (!myTurn) return;
 
-    private void receiveMove(int row, int col) {
-        board[row][col] = 1; // サーバーは黒(1)
-        flip(board, row, col, 1);
-        checkGameEnd();
-        // 自分が置けなかったら相手にパス
-        if (!hasAnyValidMove(board, 2)) {
+        if (board.canPlace(row, col, 2)) {
+            board.flip(row, col, 2);
+            panel.refresh();
+            out.println("MOVE " + row + " " + col);
+            System.out.println("送信: MOVE " + row + " " + col);
             myTurn = false;
-            updateStatus();
-            return;
-        }
-        myTurn = true;
-        updateStatus();
-        repaint();
-    }
-
-    private boolean canPlace(int[][] board, int row, int col, int player) {
-        if (board[row][col] != 0) return false;
-
-        int opponent = (player == 1) ? 2 : 1;
-
-        for (int d = 0; d < 8; d++) {
-            int r = row + DX[d];
-            int c = col + DY[d];
-            boolean hasOpponentBetween = false;
-
-            while (r >= 0 && r < BOARD_SIZE && c >= 0 && c < BOARD_SIZE) {
-                if (board[r][c] == opponent) {
-                    hasOpponentBetween = true;
-                } else if (board[r][c] == player) {
-                    if (hasOpponentBetween) {
-                        return true;
-                    } else {
-                        break;
-                    }
-                } else {
-                    break;
-                }
-                r += DX[d];
-                c += DY[d];
-            }
-        }
-        return false;
-    }
-
-    private void flip(int[][] board, int row, int col, int player) {
-        int opponent = (player == 1) ? 2 : 1;
-        board[row][col] = player;
-
-        for (int d = 0; d < 8; d++) {
-            int r = row + DX[d];
-            int c = col + DY[d];
-            boolean hasOpponentBetween = false;
-
-            while (r >= 0 && r < BOARD_SIZE && c >= 0 && c < BOARD_SIZE) {
-                if (board[r][c] == opponent) {
-                    hasOpponentBetween = true;
-                } else if (board[r][c] == player) {
-                    if (hasOpponentBetween) {
-                        int flipR = row + DX[d];
-                        int flipC = col + DY[d];
-                        while (flipR != r || flipC != c) {
-                            board[flipR][flipC] = player;
-                            flipR += DX[d];
-                            flipC += DY[d];
-                        }
-                    }
-                    break;
-                } else {
-                    break;
-                }
-                r += DX[d];
-                c += DY[d];
-            }
-        }
-    }
-
-    private boolean hasAnyValidMove(int[][] board, int player) {
-        for (int r = 0; r < BOARD_SIZE; r++) {
-            for (int c = 0; c < BOARD_SIZE; c++) {
-                if (canPlace(board, r, c, player)) {
-                    return true;
-                }
-            }
-        }
-        return false;
-    }
-
-    private int countStones(int[][] board, int player) {
-        int count = 0;
-        for (int r = 0; r < BOARD_SIZE; r++) {
-            for (int c = 0; c < BOARD_SIZE; c++) {
-                if (board[r][c] == player) {
-                    count++;
-                }
-            }
-        }
-        return count;
-    }
-
-    private void checkGameEnd() {
-        boolean blackCanMove = hasAnyValidMove(board, 1);
-        boolean whiteCanMove = hasAnyValidMove(board, 2);
-
-        if (!blackCanMove && !whiteCanMove) {
-            int blackCount = countStones(board, 1);
-            int whiteCount = countStones(board, 2);
-
-            String result;
-            if (blackCount > whiteCount) {
-                result = "黒の勝ち！ 黒: " + blackCount + " 白: " + whiteCount;
-            } else if (whiteCount > blackCount) {
-                result = "白の勝ち！ 黒: " + blackCount + " 白: " + whiteCount;
-            } else {
-                result = "引き分け！ 黒: " + blackCount + " 白: " + whiteCount;
-            }
-
-            JOptionPane.showMessageDialog(this, result, "ゲーム終了", JOptionPane.INFORMATION_MESSAGE);
-            System.exit(0);
-        }
-    }
-
-    private class GamePanel extends JPanel {
-        protected void paintComponent(Graphics g) {
-            super.paintComponent(g);
-            Graphics2D g2d = (Graphics2D) g;
-            g2d.setColor(BOARD_COLOR);
-            g2d.fillRect(0, 0, getWidth(), getHeight());
-
-            g2d.setColor(LINE_COLOR);
-            for (int i = 0; i <= BOARD_SIZE; i++) {
-                g2d.drawLine(i * CELL_SIZE, 0, i * CELL_SIZE, BOARD_SIZE * CELL_SIZE);
-                g2d.drawLine(0, i * CELL_SIZE, BOARD_SIZE * CELL_SIZE, i * CELL_SIZE);
-            }
-
-            for (int r = 0; r < BOARD_SIZE; r++) {
-                for (int c = 0; c < BOARD_SIZE; c++) {
-                    if (board[r][c] != 0) {
-                        drawPiece(g2d, r, c, board[r][c]);
-                    }
-                }
-            }
-        }
-
-        private void drawPiece(Graphics2D g2d, int row, int col, int player) {
-            int x = col * CELL_SIZE + 5;
-            int y = row * CELL_SIZE + 5;
-            int size = CELL_SIZE - 10;
-
-            if (player == 1) {
-                g2d.setColor(Color.BLACK);
-            } else {
-                g2d.setColor(Color.WHITE);
-            }
-            g2d.fillOval(x, y, size, size);
-            g2d.setColor(Color.BLACK);
-            g2d.setStroke(new BasicStroke(2));
-            g2d.drawOval(x, y, size, size);
         }
     }
 
     public static void main(String[] args) {
-        SwingUtilities.invokeLater(() -> new OthelloClient());
+        SwingUtilities.invokeLater(() -> new OthelloClient("localhost", 6000));
     }
 }
-
-
