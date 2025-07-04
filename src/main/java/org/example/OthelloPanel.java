@@ -1,82 +1,147 @@
 import javax.swing.*;
-import java.io.*;
-import java.net.*;
+import java.awt.*;
+import java.awt.event.*;
+import java.util.ArrayList;
+import java.util.List;
 
-public class OthelloClient {
-    private Socket socket;
-    private BufferedReader in;
-    private PrintWriter out;
+public class OthelloPanel extends JPanel {
+    private static final int CELL_SIZE = 60;
+    private static final int BOARD_SIZE = 8;
 
-    private OthelloBoard board;
-    private OthelloPanel panel;
-    private int myPlayer = 0; // 1か2が割り当てられる
+    private int[][] board; // 外部から渡される盤面
+    private int currentPlayer = 1; // 1=黒, 2=白
     private boolean myTurn = false;
 
-    public OthelloClient(String host, int port) {
-        board = new OthelloBoard();
-        panel = new OthelloPanel(board.board);
+    private List<Point> validMoves = new ArrayList<>();
+    private ClickListener listener;
 
-        JFrame frame = new JFrame("Othello Client");
-        frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-        frame.add(panel);
-        frame.pack();
-        frame.setLocationRelativeTo(null);
-        frame.setVisible(true);
-
-        panel.addClickListener((r, c) -> {
-            if (!myTurn) return;
-            if (!board.canPlace(r, c, myPlayer)) return;
-
-            out.println("MOVE " + r + " " + c);
-            myTurn = false;
-            panel.setMyTurn(false);
-        });
-
-        try {
-            socket = new Socket(host, port);
-            in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
-            out = new PrintWriter(socket.getOutputStream(), true);
-
-            new Thread(this::listenServer).start();
-
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
+    public interface ClickListener {
+        void onClick(int row, int col);
     }
 
-    private void listenServer() {
-        try {
-            String line;
-            while ((line = in.readLine()) != null) {
-                if (line.startsWith("PLAYER")) {
-                    myPlayer = Integer.parseInt(line.split(" ")[1]);
-                    panel.setCurrentPlayer(myPlayer);
-                    System.out.println("あなたはプレイヤー " + myPlayer + " です");
-                } else if (line.startsWith("BOARD")) {
-                    String[] parts = line.substring(6).split(",");
-                    for (int i = 0; i < parts.length; i++) {
-                        board.board[i / 8][i % 8] = Integer.parseInt(parts[i]);
-                    }
-                    panel.refresh();
-                } else if (line.equals("YOUR_TURN")) {
-                    myTurn = true;
-                    panel.setMyTurn(true);
-                    System.out.println("あなたのターンです");
-                } else if (line.equals("WAIT")) {
-                    myTurn = false;
-                    panel.setMyTurn(false);
-                    System.out.println("相手のターンです");
-                } else if (line.equals("GAME_OVER")) {
-                    JOptionPane.showMessageDialog(panel, "ゲーム終了！");
-                    System.exit(0);
+    public OthelloPanel(int[][] board) {
+        this.board = board;
+        setPreferredSize(new Dimension(BOARD_SIZE * CELL_SIZE, BOARD_SIZE * CELL_SIZE));
+        setBackground(new Color(0, 128, 0)); // 緑の盤面
+
+        addMouseListener(new MouseAdapter() {
+            public void mouseClicked(MouseEvent e) {
+                if (!myTurn || listener == null) return;
+
+                int col = e.getX() / CELL_SIZE;
+                int row = e.getY() / CELL_SIZE;
+                listener.onClick(row, col);
+            }
+        });
+    }
+
+    public void addClickListener(ClickListener listener) {
+        this.listener = listener;
+    }
+
+    public void setCurrentPlayer(int player) {
+        this.currentPlayer = player;
+    }
+
+    public void setMyTurn(boolean turn) {
+        this.myTurn = turn;
+        updateValidMoves();
+        repaint();
+    }
+
+    public void refresh() {
+        updateValidMoves();
+        repaint();
+    }
+
+    private void updateValidMoves() {
+        validMoves.clear();
+        if (!myTurn) return;
+
+        for (int r = 0; r < BOARD_SIZE; r++) {
+            for (int c = 0; c < BOARD_SIZE; c++) {
+                if (canPlace(r, c, currentPlayer)) {
+                    validMoves.add(new Point(c, r));
                 }
             }
-        } catch (IOException e) {
-            e.printStackTrace();
         }
     }
 
-    public static void main(String[] args) {
-        SwingUtilities.invokeLater(() -> new OthelloClient("localhost", 6000));
+    @Override
+    protected void paintComponent(Graphics g) {
+        super.paintComponent(g);
+
+        Graphics2D g2 = (Graphics2D) g;
+
+        // グリッド描画
+        g2.setColor(Color.BLACK);
+        for (int i = 0; i <= BOARD_SIZE; i++) {
+            g2.drawLine(i * CELL_SIZE, 0, i * CELL_SIZE, BOARD_SIZE * CELL_SIZE);
+            g2.drawLine(0, i * CELL_SIZE, BOARD_SIZE * CELL_SIZE, i * CELL_SIZE);
+        }
+
+        // 石描画
+        for (int r = 0; r < BOARD_SIZE; r++) {
+            for (int c = 0; c < BOARD_SIZE; c++) {
+                if (board[r][c] == 1) {
+                    drawPiece(g2, r, c, Color.BLACK);
+                } else if (board[r][c] == 2) {
+                    drawPiece(g2, r, c, Color.WHITE);
+                }
+            }
+        }
+
+        // 置ける場所のハイライト
+        if (myTurn) {
+            g2.setColor(new Color(150, 0, 0, 100)); // 半透明グレー
+            for (Point p : validMoves) {
+                int x = p.x * CELL_SIZE + 10;
+                int y = p.y * CELL_SIZE + 10;
+                int size = CELL_SIZE - 20;
+                g2.fillOval(x, y, size, size);
+            }
+        }
+    }
+
+    private void drawPiece(Graphics2D g2, int row, int col, Color color) {
+        int x = col * CELL_SIZE + 5;
+        int y = row * CELL_SIZE + 5;
+        int size = CELL_SIZE - 10;
+
+        g2.setColor(color);
+        g2.fillOval(x, y, size, size);
+
+        g2.setColor(Color.BLACK);
+        g2.setStroke(new BasicStroke(2));
+        g2.drawOval(x, y, size, size);
+    }
+
+    // === 石を置けるかどうかをローカルで判定する簡易関数（OthelloBoardの簡易コピー）===
+    private boolean canPlace(int row, int col, int player) {
+        if (board[row][col] != 0) return false;
+
+        int opponent = (player == 1) ? 2 : 1;
+        int[] DX = {-1, -1, -1, 0, 0, 1, 1, 1};
+        int[] DY = {-1, 0, 1, -1, 1, -1, 0, 1};
+
+        for (int d = 0; d < 8; d++) {
+            int r = row + DY[d];
+            int c = col + DX[d];
+            boolean foundOpponent = false;
+
+            while (r >= 0 && r < 8 && c >= 0 && c < 8) {
+                if (board[r][c] == opponent) {
+                    foundOpponent = true;
+                } else if (board[r][c] == player) {
+                    if (foundOpponent) return true;
+                    else break;
+                } else {
+                    break;
+                }
+                r += DY[d];
+                c += DX[d];
+            }
+        }
+        return false;
     }
 }
