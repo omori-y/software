@@ -76,8 +76,18 @@ public class OthelloClient {
                     myTurn = false;
                     panel.setMyTurn(false);
                     statusLabel.setText("相手のターンです"); // ⭐ 表示更新
-                } else if (line.equals("GAME_OVER")) {
-                    JOptionPane.showMessageDialog(panel, "ゲーム終了！");
+                } else if (line.startsWith("RESULT")) {
+                    String[] parts = line.split(" ");
+                    String winnerInfo = "";
+                    if (parts[1].equals("BLACK")) {
+                        winnerInfo = "黒の勝ち！ 黒:" + parts[2] + " 白:" + parts[3];
+                    } else if (parts[1].equals("WHITE")) {
+                        winnerInfo = "白の勝ち！ 黒:" + parts[2] + " 白:" + parts[3];
+                    } else {
+                        winnerInfo = "引き分け！ 黒:" + parts[2] + " 白:" + parts[3];
+                    }
+
+                    JOptionPane.showMessageDialog(panel, "ゲーム終了\n" + winnerInfo);
                     System.exit(0);
                 }
             }
