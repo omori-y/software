@@ -69,16 +69,33 @@ public class OthelloServer {
             // 両者パス＝ゲーム終了
             currentPlayer = 0;
             broadcastBoard();
-            for (ClientHandler ch : clients) {
-                ch.send("GAME_OVER");
-            }
-            System.out.println("ゲーム終了");
+            sendGameResult();
             return;
         }
 
         broadcastBoard();
         sendTurnInfo();
     }
+
+    private void sendGameResult() {
+        int blackCount = board.countStones(1);
+        int whiteCount = board.countStones(2);
+
+        String result;
+        if (blackCount > whiteCount) {
+            result = "RESULT BLACK " + blackCount + " " + whiteCount;
+        } else if (whiteCount > blackCount) {
+            result = "RESULT WHITE " + blackCount + " " + whiteCount;
+        } else {
+            result = "RESULT DRAW " + blackCount + " " + whiteCount;
+        }
+
+        for (ClientHandler ch : clients) {
+            ch.send(result);
+        }
+        System.out.println("ゲーム終了: " + result);
+    }
+
 
     private class ClientHandler implements Runnable {
         private Socket socket;
