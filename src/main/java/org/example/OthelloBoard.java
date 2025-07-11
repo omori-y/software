@@ -98,4 +98,17 @@ public class OthelloBoard {
     private boolean isInBounds(int r, int c) {
         return r >= 0 && r < BOARD_SIZE && c >= 0 && c < BOARD_SIZE;
     }
+
+    public int countStones(int color) {
+        int count = 0;
+        for (int r = 0; r < BOARD_SIZE; r++) {
+            for (int c = 0; c < BOARD_SIZE; c++) {
+                if (board[r][c] == color) {
+                    count++;
+                }
+            }
+        }
+        return count;
+    }
+
 }
