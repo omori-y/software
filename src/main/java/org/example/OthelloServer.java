@@ -7,10 +7,10 @@ public class OthelloServer {
     private ServerSocket serverSocket;
     private List<ClientHandler> clients = new ArrayList<>();
     private OthelloBoard board;
-    private int currentPlayer = 1; // 黒が先手
+    private int currentPlayer = 1; // 1=黒,2=白
+    private int boardSize = 8; // デフォルト
 
     public OthelloServer() throws IOException {
-        board = new OthelloBoard();
         serverSocket = new ServerSocket(PORT);
         System.out.println("サーバー起動。クライアント2人の接続待ち...");
 
@@ -22,23 +22,64 @@ public class OthelloServer {
             System.out.println("クライアント" + ch.player + "接続: " + socket.getInetAddress());
         }
 
-        broadcastBoard();
-        sendTurnInfo();
+        // 1番がメニュー、2番が待機状態
+        clients.get(0).send("SHOW_MENU");
+        clients.get(1).send("SHOW_WAIT");
+    }
+
+    // クライアントからコマンドを受けたとき
+    private synchronized void handleCommand(int player, String line) {
+        if (line.startsWith("START")) {
+            // クライアント1から受信
+            boardSize = Integer.parseInt(line.split(" ")[1]);
+            board = new OthelloBoard(boardSize);
+            currentPlayer = 1;
+            broadcast("START_GAME " + boardSize);
+            sendPlayers();
+            broadcastBoard();
+            sendTurnInfo();
+        } else if (line.startsWith("MOVE")) {
+            String[] parts = line.split(" ");
+            int r = Integer.parseInt(parts[1]);
+            int c = Integer.parseInt(parts[2]);
+            handleMove(player, r, c);
+        } else if (line.equals("MENU")) {
+            // 両者をメニューに戻す
+            clients.get(0).send("SHOW_MENU");
+            clients.get(1).send("SHOW_WAIT");
+        } else if (line.equals("EXIT")) {
+            // 切断。サーバー自体は続行
+            System.out.println("Player " + player + "切断");
+            if (player == 1 && clients.size() > 1) {
+                clients.get(1).send("HOST_EXITED");
+                System.exit(0);
+            } else if (player == 2 && clients.size() > 1) {
+                clients.get(0).send("GUEST_EXITED");
+            }
+        }
+    }
+
+    private void sendPlayers() {
+        for (ClientHandler ch : clients) {
+            ch.send("PLAYER " + ch.player);
+        }
+    }
+
+    private void broadcast(String msg) {
+        for (ClientHandler ch : clients) ch.send(msg);
     }
 
     private void broadcastBoard() {
         StringBuilder sb = new StringBuilder();
         sb.append("BOARD ");
-        for (int r = 0; r < 8; r++) {
-            for (int c = 0; c < 8; c++) {
+        for (int r = 0; r < boardSize; r++) {
+            for (int c = 0; c < boardSize; c++) {
                 sb.append(board.board[r][c]);
-                if (!(r == 7 && c == 7)) sb.append(",");
+                if (!(r == boardSize - 1 && c == boardSize - 1)) sb.append(",");
             }
         }
         String msg = sb.toString();
-        for (ClientHandler ch : clients) {
-            ch.send(msg);
-        }
+        broadcast(msg);
     }
 
     private void sendTurnInfo() {
@@ -52,19 +93,17 @@ public class OthelloServer {
     }
 
     private synchronized void handleMove(int player, int row, int col) {
-        if (player != currentPlayer) return; // 他プレイヤーの手は無視
+        if (player != currentPlayer) return;
         if (!board.canPlace(row, col, player)) return;
 
         board.flip(row, col, player);
-        System.out.println("Player " + player + " placed at " + row + "," + col);
 
-        // 次のターン判定
         int nextPlayer = (currentPlayer == 1) ? 2 : 1;
         if (board.hasAnyValidMove(nextPlayer)) {
             currentPlayer = nextPlayer;
         } else if (board.hasAnyValidMove(currentPlayer)) {
-            // 相手パスで自分のターン続行
-            System.out.println("Player " + nextPlayer + " has no valid move, turn stays.");
+            // 相手パス
+            // currentPlayerは変えない
         } else {
             // 両者パス＝ゲーム終了
             currentPlayer = 0;
@@ -90,13 +129,11 @@ public class OthelloServer {
             result = "RESULT DRAW " + blackCount + " " + whiteCount;
         }
 
-        for (ClientHandler ch : clients) {
-            ch.send(result);
-        }
+        broadcast(result);
         System.out.println("ゲーム終了: " + result);
     }
-
-
+    
+    // クライアント処理スレッド
     private class ClientHandler implements Runnable {
         private Socket socket;
         private BufferedReader in;
@@ -108,7 +145,6 @@ public class OthelloServer {
             this.player = player;
             in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
             out = new PrintWriter(socket.getOutputStream(), true);
-            send("PLAYER " + player);
         }
 
         public void send(String msg) {
@@ -120,12 +156,7 @@ public class OthelloServer {
             try {
                 while ((line = in.readLine()) != null) {
                     System.out.println("Player " + player + "からの受信: " + line);
-                    if (line.startsWith("MOVE")) {
-                        String[] parts = line.split(" ");
-                        int r = Integer.parseInt(parts[1]);
-                        int c = Integer.parseInt(parts[2]);
-                        handleMove(player, r, c);
-                    }
+                    handleCommand(player, line);
                 }
             } catch (IOException e) {
                 System.out.println("Player " + player + "切断");
