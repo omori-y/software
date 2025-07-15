@@ -25,40 +25,40 @@ public class OthelloBoard {
     }
 
     public boolean canPlace(int row, int col, int player) {
-    if (board[row][col] != 0) return false;
+        if (board[row][col] != 0) return false;
 
-    // 🔒 blockedCell に指定されたマスなら false を返す（= 置けない）
-    if (blockedCell != null && blockedCell.x == row && blockedCell.y == col) {
+        // 🔒 blockedCell に指定されたマスなら false を返す（= 置けない）
+        if (blockedCell != null && blockedCell.x == row && blockedCell.y == col) {
+            return false;
+        }
+
+        int opponent = (player == 1) ? 2 : 1;
+        int[] DX = {-1, -1, -1, 0, 0, 1, 1, 1};
+        int[] DY = {-1, 0, 1, -1, 1, -1, 0, 1};
+
+        for (int d = 0; d < 8; d++) {
+            int r = row + DY[d];
+            int c = col + DX[d];
+            boolean foundOpponent = false;
+
+            while (r >= 0 && r < 8 && c >= 0 && c < 8) {
+                if (board[r][c] == opponent) {
+                    foundOpponent = true;
+                } else if (board[r][c] == player) {
+                    if (foundOpponent) return true;
+                    else break;
+                } else {
+                    break;
+                }
+                r += DY[d];
+                c += DX[d];
+            }
+        }
         return false;
     }
 
-    int opponent = (player == 1) ? 2 : 1;
-    int[] DX = {-1, -1, -1, 0, 0, 1, 1, 1};
-    int[] DY = {-1, 0, 1, -1, 1, -1, 0, 1};
-
-    for (int d = 0; d < 8; d++) {
-        int r = row + DY[d];
-        int c = col + DX[d];
-        boolean foundOpponent = false;
-
-        while (r >= 0 && r < 8 && c >= 0 && c < 8) {
-            if (board[r][c] == opponent) {
-                foundOpponent = true;
-            } else if (board[r][c] == player) {
-                if (foundOpponent) return true;
-                else break;
-            } else {
-                break;
-            }
-            r += DY[d];
-            c += DX[d];
-        }
-    }
-    return false;
-}
-
    
-public Point blockedCell = null;
+    public Point blockedCell = null;
 
 
     public void flip(int row, int col, int player) {
@@ -112,4 +112,18 @@ public Point blockedCell = null;
     private boolean isInBounds(int r, int c) {
         return r >= 0 && r < BOARD_SIZE && c >= 0 && c < BOARD_SIZE;
     }
+
+    public int getWinner() {
+        int black = 0, white = 0;
+        for (int r = 0; r < BOARD_SIZE; r++) {
+            for (int c = 0; c < BOARD_SIZE; c++) {
+                if (board[r][c] == 1) black++;
+                else if (board[r][c] == 2) white++;
+            }
+        }
+        if (black > white) return 1;   // 黒の勝ち
+        else if (white > black) return 2; // 白の勝ち
+        else return 0;  // 引き分け
+    }
+
 }
