@@ -53,8 +53,9 @@ public class OthelloClient {
             // 石を置いたらブロック待ちに移行
             waitingForBlock = true;
             panel.setBlockingMode(true);
+            panel.setMyTurn(true);
             statusLabel.setText("ブロックしたいマスをクリックしてください");
-            panel.setMyTurn(false);
+            
         });
 
         try {
@@ -101,10 +102,49 @@ public class OthelloClient {
                     panel.setBlockedCell(r, c);
                     panel.setBlockingMode(false);
                     statusLabel.setText("相手がブロックしました。あなたのターンをお待ちください。");
-                } else if (line.equals("GAME_OVER")) {
-                    JOptionPane.showMessageDialog(panel, "ゲーム終了！");
+                } else if (line.startsWith("GAME_OVER")) {
+                    String[] parts = line.split(" ");
+                    String result = (parts.length > 1) ? parts[1] : "";
+                    int blackCount = (parts.length > 2) ? Integer.parseInt(parts[2]) : -1;
+                    int whiteCount = (parts.length > 3) ? Integer.parseInt(parts[3]) : -1;
+
+                    String message;
+                    switch (result) {
+                        case "BLACK":
+                            message = "黒の勝利です！\n黒:" + blackCount + "コマ, 白:" + whiteCount + "コマ";
+                            break;
+                        case "WHITE":
+                            message = "白の勝利です！\n黒:" + blackCount + "コマ, 白:" + whiteCount + "コマ";
+                            break;
+                        case "DRAW":
+                            message = "引き分けです。\n黒:" + blackCount + "コマ, 白:" + whiteCount + "コマ";
+                            break;
+                        default:
+                            message = "ゲーム終了！";
+                    }
+                    JOptionPane.showMessageDialog(panel, message);
                     System.exit(0);
+                } else if (line.startsWith("CLEAR_BLOCK")) {
+                    String[] parts = line.split(" ");
+                    int blockerPlayer = (parts.length > 1) ? Integer.parseInt(parts[1]) : -1;
+
+                    panel.setBlockedCell(-1, -1);
+
+                    if (blockerPlayer == myPlayer) {
+                        panel.setBlockingMode(true); 
+                        waitingForBlock = true;
+                        panel.setMyTurn(true);
+                        statusLabel.setText("ブロックしたいマスをクリックしてください");
+                    } else {
+                        panel.setBlockingMode(false);
+                        waitingForBlock = false;
+                        panel.setMyTurn(false);
+                        statusLabel.setText("相手がブロック中です");
+                    }
+
+                    panel.refresh();
                 }
+
             }
         } catch (IOException e) {
             e.printStackTrace();
