@@ -1,9 +1,6 @@
 import java.io.*;
 import java.net.*;
 import java.util.*;
-
-import dev4.OthelloServer;
-
 import java.awt.Point;
 
 public class OthelloServer {
