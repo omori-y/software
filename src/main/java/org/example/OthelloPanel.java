@@ -77,14 +77,23 @@ public class OthelloPanel extends JPanel {
     }
 
     public void setBlockedCell(int row, int col) {
+    if(row < 0 || col < 0) {
+        this.blockedCell = null;
+    } else {
         this.blockedCell = new Point(col, row);
-        repaint();
+    }
+    repaint();
     }
 
+
     public void refresh() {
+    if (blockingMode) {
+        updateBlockCandidates();
+    } else {
         updateValidMoves();
-        repaint();
     }
+    repaint();
+}
 
     private void updateValidMoves() {
         validMoves.clear();
@@ -114,64 +123,65 @@ public class OthelloPanel extends JPanel {
         }
     }
 
-    @Override
-    protected void paintComponent(Graphics g) {
-        super.paintComponent(g);
-        Graphics2D g2 = (Graphics2D) g;
+@Override
+protected void paintComponent(Graphics g) {
+    super.paintComponent(g);
+    Graphics2D g2 = (Graphics2D) g;
 
-        // 盤面
-        g2.setColor(Color.BLACK);
-        for (int i = 0; i <= BOARD_SIZE; i++) {
-            g2.drawLine(i * CELL_SIZE, 0, i * CELL_SIZE, BOARD_SIZE * CELL_SIZE);
-            g2.drawLine(0, i * CELL_SIZE, BOARD_SIZE * CELL_SIZE, i * CELL_SIZE);
-        }
+    // 盤面の線
+    g2.setColor(Color.BLACK);
+    for (int i = 0; i <= BOARD_SIZE; i++) {
+        g2.drawLine(i * CELL_SIZE, 0, i * CELL_SIZE, BOARD_SIZE * CELL_SIZE);
+        g2.drawLine(0, i * CELL_SIZE, BOARD_SIZE * CELL_SIZE, i * CELL_SIZE);
+    }
 
-        // 石
-        for (int r = 0; r < BOARD_SIZE; r++) {
-            for (int c = 0; c < BOARD_SIZE; c++) {
-                if (board[r][c] == 1) {
-                    drawPiece(g2, r, c, Color.BLACK);
-                } else if (board[r][c] == 2) {
-                    drawPiece(g2, r, c, Color.WHITE);
-                }
+    // 石の描画
+    for (int r = 0; r < BOARD_SIZE; r++) {
+        for (int c = 0; c < BOARD_SIZE; c++) {
+            if (board[r][c] == 1) {
+                drawPiece(g2, r, c, Color.BLACK);
+            } else if (board[r][c] == 2) {
+                drawPiece(g2, r, c, Color.WHITE);
             }
         }
+    }
 
-        // ハイライト（有効手）
-        if (myTurn && !blockingMode) {
-            g2.setColor(new Color(150, 0, 0, 100));
-            for (Point p : validMoves) {
-                int x = p.x * CELL_SIZE + 10;
-                int y = p.y * CELL_SIZE + 10;
-                int size = CELL_SIZE - 20;
-                g2.fillOval(x, y, size, size);
-            }
+    // ハイライト（有効手）
+    if (myTurn && !blockingMode) {
+        g2.setColor(new Color(150, 0, 0, 100));
+        for (Point p : validMoves) {
+            int x = p.x * CELL_SIZE + 10;
+            int y = p.y * CELL_SIZE + 10;
+            int size = CELL_SIZE - 20;
+            g2.fillOval(x, y, size, size);
         }
+    }
 
-        // ×マーク（ブロック候補）
-        if (blockingMode) {
-            g2.setColor(Color.RED);
-            g2.setStroke(new BasicStroke(3));
-            for (Point p : blockCandidates) {
-                int x = p.x * CELL_SIZE + 15;
-                int y = p.y * CELL_SIZE + 15;
-                int size = CELL_SIZE - 30;
-                g2.drawLine(x, y, x + size, y + size);
-                g2.drawLine(x, y + size, x + size, y);
-            }
-        }
-
-        // ブロック済みマスにも×を太く描画
-        if (blockedCell != null) {
-            g2.setColor(Color.RED.darker());
-            g2.setStroke(new BasicStroke(4));
-            int x = blockedCell.x * CELL_SIZE + 15;
-            int y = blockedCell.y * CELL_SIZE + 15;
+    if (blockingMode && myTurn) {  // ×マーク（ブロック候補）c
+        g2.setColor(Color.RED);
+        g2.setStroke(new BasicStroke(3));
+        for (Point p : blockCandidates) {
+            int x = p.x * CELL_SIZE + 15;
+            int y = p.y * CELL_SIZE + 15;
             int size = CELL_SIZE - 30;
             g2.drawLine(x, y, x + size, y + size);
             g2.drawLine(x, y + size, x + size, y);
         }
     }
+
+    // ブロック済みマスの×（相手のターンかつブロックモード中のみ表示）
+    if (blockedCell != null) { 
+        g2.setColor(Color.RED.darker());
+        g2.setStroke(new BasicStroke(4));
+        int x = blockedCell.x * CELL_SIZE + 15;
+        int y = blockedCell.y * CELL_SIZE + 15;
+        int size = CELL_SIZE - 30;
+        g2.drawLine(x, y, x + size, y + size);
+        g2.drawLine(x, y + size, x + size, y);
+    }
+    
+}
+
 
     private void drawPiece(Graphics2D g2, int row, int col, Color color) {
         int x = col * CELL_SIZE + 5;
