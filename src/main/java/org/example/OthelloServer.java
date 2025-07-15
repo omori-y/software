@@ -2,12 +2,20 @@ import java.io.*;
 import java.net.*;
 import java.util.*;
 
+import dev4.OthelloServer;
+
+import java.awt.Point;
+
 public class OthelloServer {
     private static final int PORT = 6000;
     private ServerSocket serverSocket;
     private List<ClientHandler> clients = new ArrayList<>();
     private OthelloBoard board;
     private int currentPlayer = 1; // 黒が先手
+
+    // ブロック待ち中かどうか
+    private boolean isBlockingPhase = false;
+    private Point blockedCell = null;
 
     public OthelloServer() throws IOException {
         board = new OthelloBoard();
@@ -39,6 +47,17 @@ public class OthelloServer {
         for (ClientHandler ch : clients) {
             ch.send(msg);
         }
+
+        int black = 0, white = 0;
+        for (int r = 0; r < 8; r++) {
+            for (int c = 0; c < 8; c++) {
+                if (board.board[r][c] == 1) black++;
+                else if (board.board[r][c] == 2) white++;
+            }
+        }
+        for (ClientHandler ch : clients) {
+            ch.send("SCORE " + black + " " + white);
+        }
     }
 
     private void sendTurnInfo() {
@@ -51,29 +70,52 @@ public class OthelloServer {
         }
     }
 
+    // ブロック待ち中は全員WAIT送信（石置き禁止）
+    private void sendTurnInfoBlockingPhase() {
+        for (ClientHandler ch : clients) {
+            ch.send("WAIT");
+        }
+    }
+
     private synchronized void handleMove(int player, int row, int col) {
+        if (isBlockingPhase) return; // ブロック待ち中は置けない
         if (player != currentPlayer) return; // 他プレイヤーの手は無視
         if (!board.canPlace(row, col, player)) return;
+
+        // 石を置いた後、ブロック解除
+        board.blockedCell = null;
+        blockedCell = null;
+
 
         board.flip(row, col, player);
         System.out.println("Player " + player + " placed at " + row + "," + col);
 
-        // 次のターン判定
-        int nextPlayer = (currentPlayer == 1) ? 2 : 1;
-        if (board.hasAnyValidMove(nextPlayer)) {
-            currentPlayer = nextPlayer;
-        } else if (board.hasAnyValidMove(currentPlayer)) {
-            // 相手パスで自分のターン続行
-            System.out.println("Player " + nextPlayer + " has no valid move, turn stays.");
-        } else {
-            // 両者パス＝ゲーム終了
-            currentPlayer = 0;
-            broadcastBoard();
-            for (ClientHandler ch : clients) {
-                ch.send("GAME_OVER");
-            }
-            System.out.println("ゲーム終了");
-            return;
+        // ブロック待ち状態に移行
+        isBlockingPhase = true;
+        blockedCell = null;
+
+        broadcastBoard();
+        sendTurnInfoBlockingPhase(); // 全員WAIT（ブロック待ち）
+    }
+
+    private synchronized void handleBlock(int player, int row, int col) {
+        if (!isBlockingPhase) return; // ブロック待ちじゃないなら無視
+        if (player != currentPlayer) return; // 今のプレイヤーしかブロックできない
+        if (board.board[row][col] != 0) return; // 空きマス以外ブロック不可
+        board.blockedCell = new Point(row, col);  // ← board 側にも保持
+blockedCell = new Point(row, col);        // ← 既存（描画用）の保持もそのまま
+
+
+        blockedCell = new Point(row, col);
+        System.out.println("Player " + player + " blocked " + row + "," + col);
+
+        isBlockingPhase = false;
+
+        // 次のプレイヤーにターンを渡す
+        currentPlayer = (currentPlayer == 1) ? 2 : 1;
+
+        for (ClientHandler ch : clients) {
+            ch.send("BLOCK " + row + " " + col);
         }
 
         broadcastBoard();
@@ -108,6 +150,11 @@ public class OthelloServer {
                         int r = Integer.parseInt(parts[1]);
                         int c = Integer.parseInt(parts[2]);
                         handleMove(player, r, c);
+                    } else if (line.startsWith("BLOCK")) {
+                        String[] parts = line.split(" ");
+                        int r = Integer.parseInt(parts[1]);
+                        int c = Integer.parseInt(parts[2]);
+                        handleBlock(player, r, c);
                     }
                 }
             } catch (IOException e) {
