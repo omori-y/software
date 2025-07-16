@@ -1,10 +1,13 @@
 import java.util.*;
+import java.awt.Point;
 
 public class OthelloBoard {
     private int BOARD_SIZE;
     public int[][] board;
     private static final int[] DX = {-1, -1, -1, 0, 0, 1, 1, 1};
     private static final int[] DY = {-1, 0, 1, -1, 1, -1, 0, 1};
+
+    private Point blockedCell = null;
 
     public OthelloBoard(int size) {
         this.BOARD_SIZE = size;
@@ -22,10 +25,22 @@ public class OthelloBoard {
         board[mid2][mid2] = 2;
         board[mid1][mid2] = 1;
         board[mid2][mid1] = 1;
+        blockedCell = null;
+    }
+
+    public void setBlockedCell(int r, int c) {
+        blockedCell = new Point(r, c);
+    }
+    public void clearBlockedCell() {
+        blockedCell = null;
+    }
+    public Point getBlockedCell() {
+        return blockedCell;
     }
 
     public boolean canPlace(int row, int col, int player) {
         if (!isInBounds(row, col) || board[row][col] != 0) return false;
+        if (blockedCell != null && blockedCell.x == row && blockedCell.y == col) return false;
         int opponent = (player == 1) ? 2 : 1;
 
         for (int d = 0; d < 8; d++) {
@@ -110,3 +125,5 @@ public class OthelloBoard {
         return count;
     }
 }
+
+
