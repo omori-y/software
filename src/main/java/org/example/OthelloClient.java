@@ -2,6 +2,8 @@ import javax.swing.*;
 import java.awt.*;
 import java.io.*;
 import java.net.*;
+import java.util.ArrayList;
+import java.util.List;
 
 public class OthelloClient {
     private JFrame frame;
@@ -16,6 +18,8 @@ public class OthelloClient {
     private int myPlayer = 0;
     private boolean myTurn = false;
     private int boardSize = 8;
+    private boolean blockingMode = false;
+    private OthelloMenuPanel.GameMode gameMode = OthelloMenuPanel.GameMode.NORMAL;
 
     public OthelloClient(String host, int port) {
         // === UIセットアップ ===
@@ -25,10 +29,11 @@ public class OthelloClient {
 
         // --- メニュー ---
         menuPanel = new OthelloMenuPanel(new OthelloMenuPanel.MenuListener() {
-            public void onStartGame(int selectedSize) {
+            public void onStartGame(int selectedSize, OthelloMenuPanel.GameMode mode) {
                 boardSize = selectedSize;
-                sendToServer("START " + boardSize);
-                menuPanel.showWait();    
+                gameMode = mode;
+                sendToServer("START " + boardSize + (mode == OthelloMenuPanel.GameMode.BLOCK ? " BLOCK" : ""));
+                menuPanel.showWait();    // クライアント1は開始直後一瞬待機する可能性も考慮
             }
             public void onExit() {
                 sendToServer("EXIT");
@@ -110,9 +115,22 @@ public class OthelloClient {
                 // 盤面サイズ
                 String[] parts = line.split(" ");
                 boardSize = Integer.parseInt(parts[1]);
+                if (parts.length >= 3 && parts[2].equalsIgnoreCase("BLOCK")) {
+                gameMode = OthelloMenuPanel.GameMode.BLOCK;
+                } else {
+                gameMode = OthelloMenuPanel.GameMode.NORMAL;
+                }
                 // 新しい盤面をセット
                 othelloPanel = new OthelloBoardPanel(new int[boardSize][boardSize]);
                 othelloPanel.addClickListener((row, col) -> {
+                    if (blockingMode) {
+                        // 妨害セル選択中
+                        sendToServer("BLOCK " + row + " " + col);
+                        othelloPanel.setBlockedCell(row, col); // UIにも即座に反映
+                        blockingMode = false;
+                        gamePanel.setStatus("相手のターンです（ブロック完了）");
+                        return;
+                    }
                     if (!myTurn) return;
                     if (!othelloPanel.canPlace(row, col, myPlayer)) return;
                     sendToServer("MOVE " + row + " " + col);
@@ -162,11 +180,44 @@ public class OthelloClient {
             } else if (line.equals("YOUR_TURN")) {
                 myTurn = true;
                 othelloPanel.setMyTurn(true);
+                othelloPanel.setBlockingMode(false);
                 gamePanel.setStatus("あなたのターンです");
             } else if (line.equals("WAIT")) {
                 myTurn = false;
                 othelloPanel.setMyTurn(false);
+                othelloPanel.setBlockingMode(false);
+                othelloPanel.clearBlockedCell();
                 gamePanel.setStatus("相手のターンです");
+            } else if (line.equals("SELECT_BLOCK")) {
+                // サーバから「ブロックセルを選んで！」と指示が来たとき
+                blockingMode = true;
+                myTurn = false;
+                // 相手が置ける合法手リストを表示（盤面クラス側で対応）
+                List<Point> blockCandidates = new ArrayList<>();
+                Point oldBlocked = othelloPanel.getBlockedCell();
+                othelloPanel.clearBlockedCell();
+                int opponent = (myPlayer == 1) ? 2 : 1;
+                for (int r = 0; r < boardSize; r++) {
+                    for (int c = 0; c < boardSize; c++) {
+                        if (othelloPanel.canPlace(r, c, opponent)) {
+                            blockCandidates.add(new Point(c, r));
+                        }
+                    }
+                }
+                if (oldBlocked != null) othelloPanel.setBlockedCell(oldBlocked.y, oldBlocked.x);
+                othelloPanel.setBlockingMode(true); // 妨害モードON
+                othelloPanel.setMyTurn(false); // 置石は不可
+                othelloPanel.clearBlockedCell();
+                othelloPanel.setBlockCandidates(blockCandidates);
+                gamePanel.setStatus("妨害したいマスを選んでください");
+            } else if (line.startsWith("BLOCK")) {
+                // 相手がブロックしたマスの通知
+                String[] parts = line.split(" ");
+                int r = Integer.parseInt(parts[1]);
+                int c = Integer.parseInt(parts[2]);
+                othelloPanel.setBlockedCell(r, c); // UIで赤×表示
+                othelloPanel.setBlockingMode(false); // 妨害入力終了
+                gamePanel.setStatus("あなたのターンをお待ちください（相手が妨害）");
             } else if (line.startsWith("RESULT")) {
                 String[] parts = line.split(" ");
                 String info;
