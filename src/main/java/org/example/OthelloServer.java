@@ -9,6 +9,8 @@ public class OthelloServer {
     private OthelloBoard board;
     private int currentPlayer = 1; // 1=黒,2=白
     private int boardSize = 8; // デフォルト
+    private GameMode gameMode = GameMode.NORMAL;
+    public enum GameMode { NORMAL, BLOCK }
 
     public OthelloServer() throws IOException {
         serverSocket = new ServerSocket(PORT);
@@ -31,10 +33,16 @@ public class OthelloServer {
     private synchronized void handleCommand(int player, String line) {
         if (line.startsWith("START")) {
             // クライアント1から受信
+            String[] parts = line.split(" ");
             boardSize = Integer.parseInt(line.split(" ")[1]);
+            if (parts.length >= 3 && parts[2].equalsIgnoreCase("BLOCK")) {
+                gameMode = GameMode.BLOCK;
+            } else {
+                gameMode = GameMode.NORMAL;
+            }
             board = new OthelloBoard(boardSize);
             currentPlayer = 1;
-            broadcast("START_GAME " + boardSize);
+            broadcast("START_GAME " + boardSize + " " + gameMode);
             sendPlayers();
             broadcastBoard();
             sendTurnInfo();
@@ -43,6 +51,12 @@ public class OthelloServer {
             int r = Integer.parseInt(parts[1]);
             int c = Integer.parseInt(parts[2]);
             handleMove(player, r, c);
+        } else if (line.startsWith("BLOCK")) {
+            // ★妨害マスコマンド: BLOCK r c
+            String[] parts = line.split(" ");
+            int r = Integer.parseInt(parts[1]);
+            int c = Integer.parseInt(parts[2]);
+            handleBlock(player, r, c);
         } else if (line.equals("MENU")) {
             // 両者をメニューに戻す
             clients.get(0).send("SHOW_MENU");
@@ -57,6 +71,18 @@ public class OthelloServer {
                 clients.get(0).send("GUEST_EXITED");
             }
         }
+    }
+
+    private void handleBlock(int player, int r, int c) {
+        // 妨害セルを設定
+        board.setBlockedCell(r, c);
+        // もう一人のプレイヤーへ通知
+        for (ClientHandler ch : clients) {
+            if (ch.player != player) {
+                ch.send("BLOCK " + r + " " + c);
+            }
+        }
+        sendTurnInfo();
     }
 
     private void sendPlayers() {
@@ -83,6 +109,8 @@ public class OthelloServer {
     }
 
     private void sendTurnInfo() {
+        if (gameMode == GameMode.BLOCK) {
+        }
         for (ClientHandler ch : clients) {
             if (ch.player == currentPlayer) {
                 ch.send("YOUR_TURN");
@@ -95,26 +123,35 @@ public class OthelloServer {
     private synchronized void handleMove(int player, int row, int col) {
         if (player != currentPlayer) return;
         if (!board.canPlace(row, col, player)) return;
-
+        board.clearBlockedCell();
         board.flip(row, col, player);
 
         int nextPlayer = (currentPlayer == 1) ? 2 : 1;
-        if (board.hasAnyValidMove(nextPlayer)) {
-            currentPlayer = nextPlayer;
-        } else if (board.hasAnyValidMove(currentPlayer)) {
-            // 相手パス
-            // currentPlayerは変えない
-        } else {
-            // 両者パス＝ゲーム終了
-            currentPlayer = 0;
-            broadcastBoard();
-            sendGameResult();
-            return;
-        }
+        broadcastBoard(); // 盤面はここでどの分岐でも送ってOK
 
-        broadcastBoard();
-        sendTurnInfo();
+        if (board.hasAnyValidMove(nextPlayer)) {
+            // ====== 相手が置ける場合だけブロック選択 ======
+            currentPlayer = nextPlayer;
+            if (gameMode == GameMode.BLOCK) {
+                for (ClientHandler ch : clients) {
+                    if (ch.player == player) {
+                        ch.send("SELECT_BLOCK");
+                    }
+                }
+            } else {
+                sendTurnInfo();
+            }
+        } else if (board.hasAnyValidMove(currentPlayer)) {
+            // ====== 相手がパス（自分が連続で打てる）======
+            // ブロック選択画面を出さない
+            sendTurnInfo(); // currentPlayerは変えない
+        } else {
+            // ====== 両者とも置けない＝ゲーム終了 ======
+            currentPlayer = 0;
+            sendGameResult();
+        }
     }
+
 
     private void sendGameResult() {
         int blackCount = board.countStones(1);
@@ -132,8 +169,10 @@ public class OthelloServer {
         broadcast(result);
         System.out.println("ゲーム終了: " + result);
     }
-    
+
+    // =======================
     // クライアント処理スレッド
+    // =======================
     private class ClientHandler implements Runnable {
         private Socket socket;
         private BufferedReader in;
@@ -166,6 +205,9 @@ public class OthelloServer {
         }
     }
 
+    // =======================
+    // main
+    // =======================
     public static void main(String[] args) throws IOException {
         new OthelloServer();
     }
