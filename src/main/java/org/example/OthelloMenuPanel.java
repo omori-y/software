@@ -8,9 +8,13 @@ public class OthelloMenuPanel extends JPanel {
     private final JPanel waitPanel;
     private final JComboBox<Integer> sizeCombo;
 
+    public enum GameMode { NORMAL, BLOCK }
+
+    private JComboBox<GameMode> modeCombo;
+
     // 状態通知のためのリスナー
     public interface MenuListener {
-        void onStartGame(int boardSize);
+        void onStartGame(int boardSize, GameMode mode);
         void onExit();
     }
 
@@ -39,13 +43,34 @@ public class OthelloMenuPanel extends JPanel {
         sizeCombo.setPreferredSize(new Dimension(100, 25));
         menuPanel.add(sizeCombo);
 
+        JLabel modeLabel = new JLabel("モードを選択:");
+        modeLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
+        menuPanel.add(modeLabel);
+
+        modeCombo = new JComboBox<>(new GameMode[]{GameMode.NORMAL, GameMode.BLOCK});
+        modeCombo.setAlignmentX(Component.CENTER_ALIGNMENT);
+        modeCombo.setMaximumSize(new Dimension(120, 25));
+        modeCombo.setPreferredSize(new Dimension(120, 25));
+        // モード表示ラベルの日本語化
+        modeCombo.setRenderer(new DefaultListCellRenderer() {
+            @Override
+            public Component getListCellRendererComponent(JList<?> list, Object value, int index, boolean isSelected, boolean cellHasFocus) {
+                String label = "";
+                if (value == GameMode.NORMAL) label = "普通のオセロ";
+                else if (value == GameMode.BLOCK) label = "妨害オセロ";
+                return super.getListCellRendererComponent(list, label, index, isSelected, cellHasFocus);
+            }
+        });
+        menuPanel.add(modeCombo);
+
         JPanel btnPanel = new JPanel();
         JButton startBtn = new JButton("ゲーム開始");
         JButton exitBtn = new JButton("終了");
 
         startBtn.addActionListener(e -> {
             int size = (Integer) sizeCombo.getSelectedItem();
-            listener.onStartGame(size);
+            GameMode mode = (GameMode) modeCombo.getSelectedItem();
+            listener.onStartGame(size, mode);
         });
         exitBtn.addActionListener(e -> listener.onExit());
 
