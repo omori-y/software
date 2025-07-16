@@ -8,9 +8,11 @@ public class OthelloBoardPanel extends JPanel {
     public int[][] board; // 可変サイズ盤面
     private int currentPlayer = 1;
     private boolean myTurn = false;
-    
 
     private List<Point> validMoves = new ArrayList<>();
+    private List<Point> blockCandidates = new ArrayList<>();
+    private boolean blockingMode = false;
+    private Point blockedCell = null;
     private ClickListener listener;
 
     public interface ClickListener {
@@ -24,12 +26,27 @@ public class OthelloBoardPanel extends JPanel {
 
         addMouseListener(new MouseAdapter() {
             public void mouseClicked(MouseEvent e) {
-                if (!myTurn || listener == null) return;
-                int cellSize = getWidth() / board.length; // 盤面サイズで計算
+                if (listener == null) return;
+                int cellSize = getWidth() / board.length;
                 int col = e.getX() / cellSize;
                 int row = e.getY() / cellSize;
-                if (row >= 0 && row < board.length && col >= 0 && col < board.length) {
-                    listener.onClick(row, col);
+                if (row < 0 || row >= board.length || col < 0 || col >= board.length) return;
+
+                if (blockingMode) {
+                    for (Point p : blockCandidates) {
+                        if (p.x == col && p.y == row) {
+                            listener.onClick(row, col);
+                            return;
+                        }
+                    }
+                } else {
+                    if (!myTurn) return;
+                    for (Point p : validMoves) {
+                        if (p.x == col && p.y == row) {
+                            listener.onClick(row, col);
+                            return;
+                        }
+                    }
                 }
             }
         });
@@ -49,6 +66,29 @@ public class OthelloBoardPanel extends JPanel {
         repaint();
     }
 
+    public void setBlockingMode(boolean blocking) {
+        this.blockingMode = blocking;
+            if (!blocking) {
+        blockCandidates.clear();   // ← 妨害モード終了時に候補を消す
+        }
+        updateBlockCandidates();
+        repaint();
+    }
+
+    public void setBlockedCell(int row, int col) {
+        this.blockedCell = new Point(col, row);
+        repaint();
+    }
+
+    public Point getBlockedCell() {
+        return blockedCell;
+    }
+
+    public void clearBlockedCell() {
+        this.blockedCell = null;
+        repaint();
+    }
+
     public void refresh() {
         updateValidMoves();
         repaint();
@@ -56,7 +96,7 @@ public class OthelloBoardPanel extends JPanel {
 
     private void updateValidMoves() {
         validMoves.clear();
-        if (!myTurn) return;
+        if (!myTurn || blockingMode) return;
         for (int r = 0; r < board.length; r++) {
             for (int c = 0; c < board.length; c++) {
                 if (canPlace(r, c, currentPlayer)) {
@@ -66,8 +106,35 @@ public class OthelloBoardPanel extends JPanel {
         }
     }
 
+    private void updateBlockCandidates() {
+        blockCandidates.clear();
+        if (!blockingMode) return;
+
+        int opponent = (currentPlayer == 1) ? 2 : 1;
+
+        // blockedCellを一時的に無効化して合法手リストを作る
+        Point oldBlocked = blockedCell;
+        blockedCell = null;
+
+        for (int r = 0; r < board.length; r++) {
+            for (int c = 0; c < board.length; c++) {
+                if (board[r][c] == 0 && canPlace(r, c, opponent)) {
+                    blockCandidates.add(new Point(c, r));
+                }
+            }
+        }
+        blockedCell = oldBlocked;
+    }
+
+    public void setBlockCandidates(List<Point> candidates) {
+        blockCandidates.clear();
+        if (candidates != null) blockCandidates.addAll(candidates);
+        repaint();
+    }
+
     public boolean canPlace(int row, int col, int player) {
         if (board[row][col] != 0) return false;
+        if (blockedCell != null && blockedCell.x == col && blockedCell.y == row) return false;
         int opponent = (player == 1) ? 2 : 1;
         int[] DX = {-1, -1, -1, 0, 0, 1, 1, 1};
         int[] DY = {-1, 0, 1, -1, 1, -1, 0, 1};
@@ -93,12 +160,11 @@ public class OthelloBoardPanel extends JPanel {
         return false;
     }
 
-
     @Override
     protected void paintComponent(Graphics g) {
         super.paintComponent(g);
 
-        int size = board.length; // 可変
+        int size = board.length;
         int cellSize = getWidth() / size;
 
         Graphics2D g2 = (Graphics2D) g;
@@ -122,7 +188,7 @@ public class OthelloBoardPanel extends JPanel {
         }
 
         // 置ける場所のハイライト
-        if (myTurn) {
+        if (myTurn && !blockingMode) {
             g2.setColor(new Color(150, 0, 0, 100));
             for (Point p : validMoves) {
                 int x = p.x * cellSize + cellSize / 6;
@@ -130,6 +196,30 @@ public class OthelloBoardPanel extends JPanel {
                 int ovalSize = cellSize * 2 / 3;
                 g2.fillOval(x, y, ovalSize, ovalSize);
             }
+        }
+
+        // ブロック候補 ×印
+        if (blockingMode) {
+            g2.setColor(Color.RED);
+            g2.setStroke(new BasicStroke(3));
+            for (Point p : blockCandidates) {
+                int x = p.x * cellSize + 15;
+                int y = p.y * cellSize + 15;
+                int blockSize = cellSize - 30;
+                g2.drawLine(x, y, x + blockSize, y + blockSize);
+                g2.drawLine(x, y + blockSize, x + blockSize, y);
+            }
+        }
+
+        // ブロック済みマスにも×を太く描画
+        if (blockedCell != null) {
+            g2.setColor(Color.RED.darker());
+            g2.setStroke(new BasicStroke(4));
+            int x = blockedCell.x * cellSize + 12;
+            int y = blockedCell.y * cellSize + 12;
+            int blockSize = cellSize - 30;
+            g2.drawLine(x, y, x + blockSize, y + blockSize);
+            g2.drawLine(x, y + blockSize, x + blockSize, y);
         }
     }
 
@@ -143,24 +233,5 @@ public class OthelloBoardPanel extends JPanel {
         g2.setStroke(new BasicStroke(2));
         g2.drawOval(x, y, size, size);
     }
-
-
-    // 可変盤面の内容を外部からセットしたい場合
-    public void setBoard(int[][] newBoard) {
-        if (newBoard.length != board.length) {
-            throw new IllegalArgumentException("盤面サイズが一致しません");
-        }
-        for (int r = 0; r < board.length; r++) {
-            for (int c = 0; c < board.length; c++) {
-                board[r][c] = newBoard[r][c];
-            }
-        }
-        repaint();
-    }
-
-    // セル単位で値をセットする場合
-    public void setCell(int row, int col, int value) {
-        board[row][col] = value;
-        repaint();
-    }
 }
+
