@@ -1,9 +1,10 @@
-# Othello Client-side
+# Othello
  - JDK: 21
  - ビルドツール: Gradle (Kotlin)
 
 ## チェックリスト
  - [x] ベーシックなGUI
- - [ ] オセロのコア機能
- - [ ] 通信周り
+ - [X] オセロのコア機能
+ - [X] 通信周り
+ - [X] 新しいモード
  
