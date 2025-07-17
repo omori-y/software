@@ -1,5 +1,6 @@
 import java.util.ArrayList;
 import java.util.List;
+import java.awt.Point;
 
 public class OthelloBoard {
     public static final int BOARD_SIZE = 8;
@@ -16,44 +17,57 @@ public class OthelloBoard {
         for (int r = 0; r < BOARD_SIZE; r++)
             for (int c = 0; c < BOARD_SIZE; c++)
                 board[r][c] = 0;
-        board[3][3] = 2;
-        board[3][4] = 1;
-        board[4][3] = 1;
-        board[4][4] = 2;
+        // 初期配置
+        board[3][3] = 2; // 白
+        board[3][4] = 1; // 黒
+        board[4][3] = 1; // 黒
+        board[4][4] = 2; // 白
     }
 
     public boolean canPlace(int row, int col, int player) {
-        if (!isInBounds(row, col) || board[row][col] != 0) return false;
+        if (board[row][col] != 0) return false;
+
+        // 🔒 blockedCell に指定されたマスなら false を返す（= 置けない）
+        if (blockedCell != null && blockedCell.x == row && blockedCell.y == col) {
+            return false;
+        }
 
         int opponent = (player == 1) ? 2 : 1;
+        int[] DX = {-1, -1, -1, 0, 0, 1, 1, 1};
+        int[] DY = {-1, 0, 1, -1, 1, -1, 0, 1};
 
         for (int d = 0; d < 8; d++) {
-            int r = row + DX[d];
-            int c = col + DY[d];
-            boolean hasOpponentBetween = false;
-            while (isInBounds(r, c)) {
+            int r = row + DY[d];
+            int c = col + DX[d];
+            boolean foundOpponent = false;
+
+            while (r >= 0 && r < 8 && c >= 0 && c < 8) {
                 if (board[r][c] == opponent) {
-                    hasOpponentBetween = true;
+                    foundOpponent = true;
                 } else if (board[r][c] == player) {
-                    if (hasOpponentBetween) return true;
+                    if (foundOpponent) return true;
                     else break;
                 } else {
                     break;
                 }
-                r += DX[d];
-                c += DY[d];
+                r += DY[d];
+                c += DX[d];
             }
         }
         return false;
     }
+
+   
+    public Point blockedCell = null;
+
 
     public void flip(int row, int col, int player) {
         int opponent = (player == 1) ? 2 : 1;
         board[row][col] = player;
 
         for (int d = 0; d < 8; d++) {
-            int r = row + DX[d];
-            int c = col + DY[d];
+            int r = row + DY[d];
+            int c = col + DX[d];
             boolean hasOpponentBetween = false;
 
             while (isInBounds(r, c)) {
@@ -61,20 +75,20 @@ public class OthelloBoard {
                     hasOpponentBetween = true;
                 } else if (board[r][c] == player) {
                     if (hasOpponentBetween) {
-                        int flipR = row + DX[d];
-                        int flipC = col + DY[d];
+                        int flipR = row + DY[d];
+                        int flipC = col + DX[d];
                         while (flipR != r || flipC != c) {
                             board[flipR][flipC] = player;
-                            flipR += DX[d];
-                            flipC += DY[d];
+                            flipR += DY[d];
+                            flipC += DX[d];
                         }
                     }
                     break;
                 } else {
                     break;
                 }
-                r += DX[d];
-                c += DY[d];
+                r += DY[d];
+                c += DX[d];
             }
         }
     }
@@ -98,4 +112,18 @@ public class OthelloBoard {
     private boolean isInBounds(int r, int c) {
         return r >= 0 && r < BOARD_SIZE && c >= 0 && c < BOARD_SIZE;
     }
+
+    public int getWinner() {
+        int black = 0, white = 0;
+        for (int r = 0; r < BOARD_SIZE; r++) {
+            for (int c = 0; c < BOARD_SIZE; c++) {
+                if (board[r][c] == 1) black++;
+                else if (board[r][c] == 2) white++;
+            }
+        }
+        if (black > white) return 1;   // 黒の勝ち
+        else if (white > black) return 2; // 白の勝ち
+        else return 0;  // 引き分け
+    }
+
 }
