@@ -1,5 +1,8 @@
-import java.util.*;
-import java.awt.Point;
+package org.example;
+
+import java.awt.*;
+import java.util.ArrayList;
+import java.util.List;
 
 public class OthelloBoard {
     private int BOARD_SIZE;
@@ -125,5 +128,3 @@ public class OthelloBoard {
         return count;
     }
 }
-
-
