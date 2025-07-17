@@ -1,5 +1,3 @@
-package org.example;
-
 import javax.swing.*;
 import java.awt.*;
 import java.io.*;
@@ -181,10 +179,18 @@ public class OthelloClient {
                 othelloPanel.refresh();
             } else if (line.equals("YOUR_TURN")) {
                 myTurn = true;
+                blockingMode = false;
                 othelloPanel.setMyTurn(true);
                 othelloPanel.setBlockingMode(false);
                 gamePanel.setStatus("あなたのターンです");
-            } else if (line.equals("WAIT")) {
+            } else if (line.equals("CLEAR_BLOCK_AND_YOUR_TURN")) {
+                myTurn = true;
+                blockingMode = false;
+                othelloPanel.clearBlockedCell();   // ×印を消す
+                othelloPanel.setBlockingMode(false);
+                othelloPanel.setMyTurn(true);
+                gamePanel.setStatus("あなたのターンです");
+            }else if (line.equals("WAIT")) {
                 myTurn = false;
                 othelloPanel.setMyTurn(false);
                 othelloPanel.setBlockingMode(false);

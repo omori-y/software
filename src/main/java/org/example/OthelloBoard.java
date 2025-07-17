@@ -1,8 +1,5 @@
-package org.example;
-
-import java.awt.*;
-import java.util.ArrayList;
-import java.util.List;
+import java.util.*;
+import java.awt.Point;
 
 public class OthelloBoard {
     private int BOARD_SIZE;
@@ -96,6 +93,18 @@ public class OthelloBoard {
         }
     }
 
+    public int countValidMoves(int player) {
+    int count = 0;
+    for (int r = 0; r < board.length; r++) {
+        for (int c = 0; c < board.length; c++) {
+            if (canPlace(r, c, player)) {
+                count++;
+            }
+        }
+    }
+    return count;
+}
+
     public boolean hasAnyValidMove(int player) {
         return !getValidMoves(player).isEmpty();
     }
@@ -128,3 +137,5 @@ public class OthelloBoard {
         return count;
     }
 }
+
+
